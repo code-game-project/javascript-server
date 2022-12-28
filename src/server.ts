@@ -1,160 +1,177 @@
+import { env } from "process";
 import { Server } from "http";
-import { v4 } from "uuid";
-import { WebSocketServer, WebSocket } from "ws";
-import { Game } from "./game.js";
-import { Player } from "./player.js";
-import { Socket } from "./socket.js";
+import { WebSocketServer } from "ws";
+import { DebugSocket } from "./debug-socket.js";
+import { GameSocket } from "./game-socket.js";
+import { SpectatorSocket } from "./spectator-socket.js";
+import type { Game } from "./game.js";
+import { Logger } from "./logger.js";
 
-/** Game IDs mapped to `Game` instances. */
-interface Games { [index: string]: Game; }
+/** Game IDs mapped to game instances. */
+interface Games<Config extends object = object> { [index: string]: Game<Config>; }
 
-/** An exendable base class for creating players. */
-export abstract class GameServer {
+type CreateGameFn<Config extends object = object> = (_protected: boolean, config?: Config) => Game<Config>;
+
+export class GameServer<Config extends object = object> {
+  /** The websocket server encapsulated in the game server. */
   private wss: WebSocketServer;
-  public readonly privateGames: Games = {};
-  public readonly publicGames: Games = {};
+  /** The maximum number of games that this server can have. */
+  public readonly MAX_GAMES_COUNT: number;
+  /** The time between pings in seconds. This option is to be passed to new Sockets on their creation. */
+  public readonly HEARTBEAT_INTERVAL_SECONDS: number;
+  /** Creates new instances of descendants of `Game`. */
+  private readonly createGameFn: CreateGameFn<Config>;
+  /** A map of public games on the server. */
+  private readonly publicGames: Games<Config> = {};
+  /** A map of private games on the server. */
+  private readonly privateGames: Games<Config> = {};
+  public readonly logger = new Logger<Config>();
 
-  public constructor(server: Server, createSocket: (socket: WebSocket) => Socket) {
+  public constructor(server: Server, createGameFn: CreateGameFn<Config>, maxGamesCount: number = 500, heartbeatIntervalSeconds: number = 10 * 60) {
     this.wss = new WebSocketServer({ noServer: true });
-    this.wss.on("connection", (ws) => createSocket(ws));
+    this.MAX_GAMES_COUNT = Number(env.CG_MAX_GAMES_COUNT || maxGamesCount);
+    this.HEARTBEAT_INTERVAL_SECONDS = Number(env.CG_HEARTBEAT_INTERVAL || heartbeatIntervalSeconds);
+    this.createGameFn = createGameFn;
     this.handleUpgrades(server);
   }
 
   /**
-   * Handles HTTP WebSocket upgrade requests to `/ws` by
-   * converting them to WebSocket connections.
-   * @param server the HTTP server
-   */
-  private handleUpgrades(server: Server) {
-    server.on("upgrade", (request, socket, head) => {
-      if (request.url === "/ws") {
-        this.wss.handleUpgrade(request, socket, head, (ws) => {
-          this.wss.emit("connection", ws, request);
-        });
-      } else {
-        socket.destroy();
-      }
-    });
+   * Looks for a game in the `publicGames`, as well as in the `privateGames`.
+   * @param gameId The game ID.
+   * @returns the game or undefined if the game does not exist.
+  */
+  public getGame(gameId: string): Game<Config> | undefined {
+    return this.publicGames[gameId] || this.privateGames[gameId];
   }
 
-  /** Creates a new `Game` instance. */
-  protected abstract createGame(): Game;
+  public maxGamesCountReached() {
+    return (Object.keys(this.publicGames).length + Object.keys(this.publicGames).length) === this.MAX_GAMES_COUNT;
+  }
 
-  /**
-   * Looks for a game in the `publicGames`, as well as in the `privateGames`.
-   * @param gameId the game_id
-   * @returns the `Game` or undefined if the game does not exist
-   */
-  public getGame(gameId: string): Game | undefined {
-    return this.publicGames[gameId] || this.privateGames[gameId];
+  public getPublicGames(): Readonly<Games<Config>> {
+    return this.publicGames;
+  }
+
+  public getPrivateGames(): Readonly<Games<Config>> {
+    return this.privateGames;
   }
 
   /**
    * Creates a new game.
-   * @param _public if the game should be listed publicly
-   * @returns the game_id
-   */
-  public create(_public: boolean): string {
+   * @param _public Whether the game should be listed publicly.
+   * @param _protected Whether the game should be protected by a join secret.
+   * @param config Custom config options provided at creation time.
+   * @returns the game ID.
+   * @throws when the `MAX_GAMES_COUNT` is reached.
+  */
+  public createGame(_public: boolean, _protected: boolean, config?: Config): { gameId: string, joinSecret?: string; } {
     this.deleteInactive();
-    const gameId = v4();
-    if (_public) this.publicGames[gameId] = this.createGame();
-    else this.privateGames[gameId] = this.createGame();
-    return gameId;
+    if (this.maxGamesCountReached()) {
+      const errorMessage = "The maximum number of games for this server has been reached.";
+      this.logger.errorStdout("Unable to create a new game: " + errorMessage);
+      throw errorMessage;
+    }
+    const game = this.createGameFn(_protected, config);
+    if (_public) {
+      this.publicGames[game.id] = game;
+      this.logger.infoStdout(`Created new public game ${game.id}.`);
+    } else {
+      this.privateGames[game.id] = game;
+      this.logger.infoStdout(`Created new private game ${game.id.slice(0, 8)}-****-****-****-************.`);
+    }
+    return {
+      gameId: game.id,
+      joinSecret: game.secret,
+    };
   }
 
   /** Deletes inactive games. */
   protected deleteInactive() {
+    const deleted: string[] = [];
     for (const [gameId, game] of Object.entries(this.publicGames)) {
-      if (!game.active()) delete this.publicGames[gameId];
-    }
-    for (const [gameId, game] of Object.entries(this.privateGames)) {
-      if (!game.active()) delete this.publicGames[gameId];
-    }
-  }
-
-  /**
-   * Creates a new `Player` in a given `Game`.
-   * @param gameId the game_id
-   * @param socket the socket that wants to join
-   * @returns the `Player`
-   * @throws if the game does not exist
-   */
-  public join(gameId: string, username: string, socket: Socket): Player {
-    const game = this.getGame(gameId);
-    if (game) return game.addPlayer(username, socket);
-    else throw `There is no game with the game_id "${gameId}".`;
-  }
-
-  /**
-   * Attempts to retrieve an existing `Player` for a `Socket`.
-   * @param gameId the game_id
-   * @param playerId the player_id
-   * @param secret the secret
-   * @param socket the socket that wants to connect
-   * @returns the `Player`
-   * @throws if the game does not exist or the secret is incorrect
-   */
-  public connect(gameId: string, playerId: string, secret: string, socket: Socket): Player {
-    const game = this.getGame(gameId);
-    if (game) {
-      if (game.players[playerId].verifySecret(secret)) {
-        const player = game.players[playerId];
-        player.connectSocket(socket);
-        this.emitInfo(player.playerId, game, socket);
-        return player;
+      if (!game.active()) {
+        game.terminate();
+        delete this.publicGames[gameId];
+        delete this.privateGames[gameId];
+        deleted.push(gameId);
       }
-      else throw "Incorrect player_secret";
     }
-    else throw `There is no game with the game_id "${gameId}".`;
-  }
-
-  /**
-   * Adds a socket to given `Game` as a specatator.
-   * @param gameId the game_id
-   * @param socket the socket that wants to spectate
-   * @throws if the game does not exist
-   */
-  public spectate(gameId: string, socket: Socket) {
-    const game = this.getGame(gameId);
-    if (game) game.addSpectator(socket);
-    else throw `There is no game with the game_id "${gameId}".`;
-  }
-
-  /**
-   * Adds a socket to given `Game` as a specatator.
-   * @param gameId the game_id
-   * @param socketId the socket ID of the socket that wants to stop spectating
-   * @throws if the game does not exist
-   */
-  public stopSpectating(gameId: string, socketId: string) {
-    const game = this.getGame(gameId);
-    if (game) game.removeSpectator(socketId);
-    else throw `There is no game with the game_id "${gameId}".`;
-  }
-
-  /**
-   * Emits information about a given `Game` to a new `Socket`.
-   * @param playerId the player_id of the player that joined or connected
-   * @param game the `Game` about which to provide the information
-   * @param socket the `Socket` that joined or connected
-   */
-  public emitInfo(playerId: string, game: Game, socket: Socket) {
-    const players: { [index: string]: string; } = {};
-    for (const [playerId, player] of Object.entries(game.players)) {
-      players[playerId] = player.username;
+    if (deleted.length > 0) {
+      this.logger.info(`Deleted ${deleted.length} inactive games.`, { deleted_games_ids: deleted });
     }
-    socket.emit(playerId, { name: "cg_info", data: { players } });
   }
 
   /**
-   * Checks if a game is inactive and deletes it after someone has left a game.
-   * @param gameId the game_id
+   * Handles HTTP websocket upgrade requests to the following URLs
+   * by converting them to websocket connections and the `GameSocket`,
+   * `SpectatorSocket` or `DebugSocket` class:
+   * 
+   * - `/api/debug` -> Debugs the entire server.
+   * - `/api/games/{gameId}/spectate` -> Spectates a game.
+   * - `/api/games/{gameId}/debug` -> Debugs a game.
+   * - `/api/games/{gameId}/players/{playerId}/connect?player_secret=<the-secret>` -> Controls or spectates a player.
+   * - `/api/games/{gameId}/players/{playerId}/debug?player_secret=<the-secret>` -> Debugs a player.
+   * 
+   * @param server the HTTP server.
    */
-  public leaveGame(gameId: string) {
-    if (this.publicGames[gameId] && !this.publicGames[gameId].active()) {
-      delete this.publicGames[gameId];
-    } else if (this.privateGames[gameId] && !this.privateGames[gameId].active()) {
-      delete this.privateGames[gameId];
-    }
+  private handleUpgrades(server: Server) {
+    server.on("upgrade", (request, socket, head) => {
+      this.wss.handleUpgrade(request, socket, head, (ws) => {
+        // TODO: return HTTP status codes as best as possible
+        if (!request.url) {
+          socket.destroy();
+          return;
+        }
+
+        if (request.url === "/api/debug") {
+          this.logger.addDebugSocket(new DebugSocket(ws, this, null, null, this.HEARTBEAT_INTERVAL_SECONDS));
+          return;
+        }
+
+        const { gameId, route, playerId, playerRoute, playerSecret } = GameServer.deserializeURL(request.url);
+        if (!gameId) {
+          socket.destroy();
+          return;
+        }
+
+        const game = this.getGame(gameId);
+        if (!game) {
+          socket.destroy();
+          return;
+        }
+
+        if (route === "spectate") game.addSpectator(new SpectatorSocket(game, ws, this.HEARTBEAT_INTERVAL_SECONDS));
+        else if (route === "debug") game.logger.addDebugSocket(new DebugSocket(ws, null, game, null, this.HEARTBEAT_INTERVAL_SECONDS));
+        else if (route === "players" && playerId && playerSecret) {
+          const player = game.getPlayer(playerId);
+          if (!player.verifySecret(playerSecret)) {
+            socket.destroy();
+            return;
+          }
+          if (playerRoute === "connect") {
+            player.addGameSocket(new GameSocket(player, ws, this.HEARTBEAT_INTERVAL_SECONDS));
+          } else if (playerRoute === "debug") {
+            player.logger.addDebugSocket(new DebugSocket(ws, null, null, player, this.HEARTBEAT_INTERVAL_SECONDS));
+          }
+        }
+      });
+    });
+  }
+
+  /**
+   * Seperates a given URL into its components.
+   * @param url The URL.
+   * @returns an object with the relevant components.
+   */
+  private static deserializeURL(url: string): { gameId?: string, route?: string, playerId?: string, playerRoute?: string, playerSecret: string | null; } {
+    const pathMatcher = /^\/api\/games\/(?<gameId>[A-Fa-f0-9\-]+)\/(?<route>\w+)(\/(?<playerId>[A-Fa-f0-9\-]+)\/(?<playerRoute>\w+))*?(\?(?<query>.+))*?$/;
+    const { gameId, route, playerId, playerRoute, query } = pathMatcher.exec(url)?.groups || {};
+    return {
+      gameId,
+      route,
+      playerId,
+      playerRoute,
+      playerSecret: new URLSearchParams(query || "").get("player_secret")
+    };
   }
 }

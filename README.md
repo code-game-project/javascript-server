@@ -1,10 +1,18 @@
 # javascript-server
 
-![CodeGame Protocol Version](https://img.shields.io/badge/Protocol-v0.6-orange)
-![CodeGame GameServer Version](https://img.shields.io/badge/GameServer-v0.1-yellow)
-![Node.js Version](https://img.shields.io/badge/node-%3E%3D%20v8.0-brightgreen)
+![CodeGame Version](https://img.shields.io/badge/CodeGame-v0.8-orange)
+![Node.js Version](https://img.shields.io/badge/node-%3E%3D%20v14.0-brightgreen)
 
 This is the JavaScript (and TypeScript) server library for CodeGame.
+
+## Environment Variables
+
+The following variables are over **overrides**. Game-specific defaults can be set using code.
+
+- CG_MAX_GAME_COUNT: Overrides the default maximum game count per server. The default is `500`. The minimum is `1`.
+- CG_MAX_PLAYER_COUNT: Overrides the default maximum player count per game. The default is `5`. The minimum is `1`.
+- CG_MAX_INACTIVE_TIME: Overrides the default maximum time in minutes that a player is allowed to be in a game without at least one socket controlling it. The default is `10` minutes. When all players in a game are inactive the game is deleted automatically.
+- CG_HEARTBEAT_INTERVAL: Overrides the default time between WebSocket pings. The default is `10 * 60` seconds.
 
 ## License
 
