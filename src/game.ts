@@ -1,10 +1,12 @@
-import { env } from "process";
 import { v4 } from "uuid";
 import type { Player } from "./player.js";
 import type { AnyEvent } from "./game-socket.js";
 import type { SpectatorSocket } from "./spectator-socket.js";
 import { randomSecret } from "./secret.js";
 import { Logger } from "./logger.js";
+
+const DEFAULT_MAX_PLAYER_COUNT = 6;
+const DEFAULT_MAX_INACTIVE_MINUTES = 10;
 
 /** An exendable base class for creating games. */
 export abstract class Game<Config extends object = object> {
@@ -31,12 +33,17 @@ export abstract class Game<Config extends object = object> {
    * Creates a new game.
    * @param protected Whether the game should be protected by a join secret.
    * @param config Custom config options provided at creation time.
-   * @param maxPlayerCount Maxiumum amount of players allowed in one game at a time. The default is 5. The minimum is 1.
+   * @param maxPlayerCount Maxiumum amount of players allowed in one game at a time. The default is 6. The minimum is 1.
    * @param maxInactiveTimeMinutes Maximum inactive time of a player in minutes. The default is 10 minutes.
    */
-  constructor(_protected: boolean, config?: object, maxPlayerCount: number = 5, maxInactiveTimeMinutes: number = 10) {
-    this.MAX_PLAYER_COUNT = Math.max(Number(env.CG_MAX_PLAYER_COUNT || maxPlayerCount), 1);
-    this.MAX_INACTIVE_TIME_MINUTES = Number(env.CG_MAX_INACTIVE_TIME || maxInactiveTimeMinutes);
+  constructor(
+    _protected: boolean,
+    config?: object,
+    maxPlayerCount: number = DEFAULT_MAX_PLAYER_COUNT,
+    maxInactiveTimeMinutes: number = DEFAULT_MAX_INACTIVE_MINUTES
+  ) {
+    this.MAX_PLAYER_COUNT = maxPlayerCount ? Math.max(maxPlayerCount, 1) : DEFAULT_MAX_PLAYER_COUNT;
+    this.MAX_INACTIVE_TIME_MINUTES = maxInactiveTimeMinutes || DEFAULT_MAX_INACTIVE_MINUTES;
     this.protected = _protected;
     this.config = this.configSanitizer(config);
   }

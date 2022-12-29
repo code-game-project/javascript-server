@@ -1,18 +1,27 @@
-import { env } from "process";
-import { Server } from "http";
+import { createServer, type Server } from "http";
+import express from "express";
+import cors from "cors";
 import { WebSocketServer } from "ws";
+import { createApi, type Info } from "./api.js";
 import { DebugSocket } from "./debug-socket.js";
 import { GameSocket } from "./game-socket.js";
 import { SpectatorSocket } from "./spectator-socket.js";
-import type { Game } from "./game.js";
 import { Logger } from "./logger.js";
+import type { Game } from "./game.js";
+import { CG_VERSION } from "./lib.js";
 
 /** Game IDs mapped to game instances. */
 interface Games<Config extends object = object> { [index: string]: Game<Config>; }
 
-type CreateGameFn<Config extends object = object> = (_protected: boolean, config?: Config) => Game<Config>;
+export type CreateGameFn<Config extends object = object> = (_protected: boolean, config?: Config) => Game<Config>;
+
+const DEFAULT_PORT = 8080;
+const DEFAULT_GAMES_COUNT = 500;
+const DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 10 * 60;
 
 export class GameServer<Config extends object = object> {
+  /** The `http.Server` instance that powers the API and Websockets. */
+  public readonly server: Server;
   /** The websocket server encapsulated in the game server. */
   private wss: WebSocketServer;
   /** The maximum number of games that this server can have. */
@@ -27,12 +36,38 @@ export class GameServer<Config extends object = object> {
   private readonly privateGames: Games<Config> = {};
   public readonly logger = new Logger<Config>();
 
-  public constructor(server: Server, createGameFn: CreateGameFn<Config>, maxGamesCount: number = 500, heartbeatIntervalSeconds: number = 10 * 60) {
+  public constructor(
+    info: Info,
+    cgePath: string,
+    createGame: CreateGameFn<Config>,
+    port: number = DEFAULT_PORT,
+    maxGamesCount: number = DEFAULT_GAMES_COUNT,
+    heartbeatIntervalSeconds: number = DEFAULT_HEARTBEAT_INTERVAL_SECONDS
+  ) {
+    // Guards
+    // These are necessary because `NaN != false` so the default parameters will
+    // not be used. However, `!NaN == true`.
+    if (!port) port = DEFAULT_PORT;
+    if (!maxGamesCount) maxGamesCount = DEFAULT_GAMES_COUNT;
+    if (!heartbeatIntervalSeconds) heartbeatIntervalSeconds = DEFAULT_HEARTBEAT_INTERVAL_SECONDS;
+
+    // Api
+    const app = express();
+    app.use(cors());
+    app.use(createApi(this, cgePath, Object.assign(info, { cg_version: CG_VERSION.join(".") })));
+
+    // Game
+    this.createGameFn = createGame;
+
+    // Server
     this.wss = new WebSocketServer({ noServer: true });
-    this.MAX_GAMES_COUNT = Number(env.CG_MAX_GAMES_COUNT || maxGamesCount);
-    this.HEARTBEAT_INTERVAL_SECONDS = Number(env.CG_HEARTBEAT_INTERVAL || heartbeatIntervalSeconds);
-    this.createGameFn = createGameFn;
-    this.handleUpgrades(server);
+    this.server = createServer(app);
+    this.handleUpgrades();
+    this.server.listen(port, () => console.log(`Listening on port ${port}.`));
+
+    // Config
+    this.MAX_GAMES_COUNT = maxGamesCount;
+    this.HEARTBEAT_INTERVAL_SECONDS = heartbeatIntervalSeconds;
   }
 
   /**
@@ -111,11 +146,9 @@ export class GameServer<Config extends object = object> {
    * - `/api/games/{gameId}/debug` -> Debugs a game.
    * - `/api/games/{gameId}/players/{playerId}/connect?player_secret=<the-secret>` -> Controls or spectates a player.
    * - `/api/games/{gameId}/players/{playerId}/debug?player_secret=<the-secret>` -> Debugs a player.
-   * 
-   * @param server the HTTP server.
    */
-  private handleUpgrades(server: Server) {
-    server.on("upgrade", (request, socket, head) => {
+  private handleUpgrades() {
+    this.server.on("upgrade", (request, socket, head) => {
       this.wss.handleUpgrade(request, socket, head, (ws) => {
         // TODO: return HTTP status codes as best as possible
         if (!request.url) {

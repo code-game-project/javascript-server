@@ -20,7 +20,7 @@ export abstract class Player<Config extends object = object> {
   /** A map of debug sockets associated with the player. */
   protected readonly debugSockets: { [index: string]: DebugSocket<Config>; } = {};
   /** The unix timestamp of the time that the last socket disconnected from the player. */
-  public inactiveSince = 0;
+  public inactiveSince = Date.now();
   public readonly logger = new Logger<Config>();
 
   /**

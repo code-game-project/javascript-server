@@ -1,6 +1,18 @@
 import { Router, json } from "express";
 import { GameServer } from "./server.js";
 
+export interface Info {
+  name: string,
+  display_name?: string,
+  description?: string,
+  version?: string,
+  repository_url?: string,
+}
+
+interface InfoInternal extends Info {
+  cg_version: string,
+}
+
 /**
  * Creates an express.js `Router` that handles the standard routes defined in the Game Server Specification.
  * @param gameServer The `GameServer` instace.
@@ -8,14 +20,7 @@ import { GameServer } from "./server.js";
  * @param info Information about the game server.
  * @returns an express `Router`.
  */
-export function createApi(gameServer: GameServer, cgePath: string, info: {
-  name: string,
-  cg_version: string,
-  display_name?: string,
-  description?: string,
-  version?: string,
-  repository_url?: string,
-}): Router {
+export function createApi<Config extends object>(gameServer: GameServer<Config>, cgePath: string, info: InfoInternal): Router {
   const router = Router();
   router.use(json({ limit: '2kb' }));
 
