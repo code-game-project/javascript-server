@@ -1,6 +1,6 @@
 {
   "name": "@code-game-project/server",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "This is the JavaScript (and TypeScript) server library for CodeGame.",
   "license": "MIT",
   "author": {

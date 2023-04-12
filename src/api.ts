@@ -1,4 +1,5 @@
 import { Router, json } from "express";
+import express from "express";
 import { GameServer } from "./server.js";
 
 export interface Info {
@@ -16,13 +17,22 @@ interface InfoInternal extends Info {
 /**
  * Creates an express.js `Router` that handles the standard routes defined in the Game Server Specification.
  * @param gameServer The `GameServer` instace.
+ * @param webRoot The path to the root of the frontend. Specify `null` if there are no static assets.
  * @param cgePath The file path to the Code Game Events file about the game.
  * @param info Information about the game server.
  * @returns an express `Router`.
  */
-export function createApi<Config extends object>(gameServer: GameServer<Config>, cgePath: string, info: InfoInternal): Router {
+export function createApi<Config extends object>(
+  gameServer: GameServer<Config>,
+  webRoot: string | null,
+  cgePath: string,
+  info: InfoInternal
+): Router {
   const router = Router();
   router.use(json({ limit: '2kb' }));
+
+  // static
+  if (webRoot) router.use(express.static(webRoot));
 
   // info
   router.get("/api/info", (_, res) => res.status(200).json(info));

@@ -36,9 +36,21 @@ export class GameServer<Config extends object = object> {
   private readonly privateGames: Games<Config> = {};
   public readonly logger = new Logger<Config>();
 
+  /**
+   * Creates a new `GameServer`.
+   * @param info Information about the game server.
+   * @param cgePath The file path to the Code Game Events file about the game.
+   * @param webRoot The path to the root of the frontend. Specify `null` if there are no static assets.
+   * @param createGame A function that is called to create a new game. An instance of `Game` must be returned.
+   * @param port The port that the server will bind to.
+   * @param maxGamesCount The maximum number of games allowed on the server at once.
+   * @param heartbeatIntervalSeconds The time in seconds to wait before checking again whether a socket is still alive.
+   * @returns an instance of `GameServer`.
+   */
   public constructor(
     info: Info,
     cgePath: string,
+    webroot: string | null,
     createGame: CreateGameFn<Config>,
     port: number = DEFAULT_PORT,
     maxGamesCount: number = DEFAULT_GAMES_COUNT,
@@ -54,7 +66,7 @@ export class GameServer<Config extends object = object> {
     // Api
     const app = express();
     app.use(cors());
-    app.use(createApi(this, cgePath, Object.assign(info, { cg_version: CG_VERSION.join(".") })));
+    app.use(createApi(this, webroot, cgePath, Object.assign(info, { cg_version: CG_VERSION.join(".") })));
 
     // Game
     this.createGameFn = createGame;
@@ -68,6 +80,22 @@ export class GameServer<Config extends object = object> {
     // Config
     this.MAX_GAMES_COUNT = maxGamesCount;
     this.HEARTBEAT_INTERVAL_SECONDS = heartbeatIntervalSeconds;
+  }
+
+  /**
+   * Stops the server from accepting new connections and keeps
+   * existing connections. This function is asynchronous, the
+   * server is finally closed when all connections are ended
+   * and the server emits a 'close' event. The optional callback
+   * will be called once the 'close' event occurs. Unlike that
+   * event, it will be called with an Error as its only argument
+   * if the server was not open when it was closed.
+   * 
+   * See `http.Server.close` for more.
+   */
+  public close(onCloseCallback?: ((err?: Error | undefined) => void) | undefined) {
+    this.server.close(onCloseCallback);
+    // TODO: Close all WebSockets if they are not already closed.
   }
 
   /**
