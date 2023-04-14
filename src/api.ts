@@ -16,7 +16,7 @@ interface InfoInternal extends Info {
 
 /**
  * Creates an express.js `Router` that handles the standard routes defined in the Game Server Specification.
- * @param gameServer The `GameServer` instace.
+ * @param gameServer The `GameServer` instance.
  * @param webRoot The path to the root of the frontend. Specify `null` if there are no static assets.
  * @param cgePath The file path to the Code Game Events file about the game.
  * @param info Information about the game server.

@@ -20,7 +20,7 @@ const DEFAULT_GAMES_COUNT = 500;
 const DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 10 * 60;
 
 export class GameServer<Config extends object = object> {
-  /** The `http.Server` instance that powers the API and Websockets. */
+  /** The `http.Server` instance that powers the API and WebSockets. */
   public readonly server: Server;
   /** The websocket server encapsulated in the game server. */
   private wss: WebSocketServer;
@@ -220,7 +220,7 @@ export class GameServer<Config extends object = object> {
   }
 
   /**
-   * Seperates a given URL into its components.
+   * Separates a given URL into its components.
    * @param url The URL.
    * @returns an object with the relevant components.
    */

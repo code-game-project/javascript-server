@@ -1,7 +1,7 @@
 import type { WebSocket } from "ws";
 import { v4 } from "uuid";
 
-/** An exendable base class for creating players. */
+/** An extendable base class for creating players. */
 export abstract class Socket {
   /** The `WebSocket` instance to be associated with the socket. */
   protected readonly socket: WebSocket;

@@ -5,7 +5,7 @@ import { Logger } from "./logger.js";
 import { v4 } from "uuid";
 import { randomSecret } from "./secret.js";
 
-/** An exendable base class for creating players. */
+/** An extendable base class for creating players. */
 export abstract class Player<Config extends object = object> {
   /** The game the player belongs to. */
   protected abstract game: Game;

@@ -8,9 +8,9 @@ import { Logger } from "./logger.js";
 const DEFAULT_MAX_PLAYER_COUNT = 6;
 const DEFAULT_MAX_INACTIVE_MINUTES = 10;
 
-/** An exendable base class for creating games. */
+/** An extendable base class for creating games. */
 export abstract class Game<Config extends object = object> {
-  /** The maxiumum amount of players allowed in one game at a time. */
+  /** The maximum amount of players allowed in one game at a time. */
   protected readonly MAX_PLAYER_COUNT: number;
   /** The maximum inactive time of a player in minutes. */
   protected readonly MAX_INACTIVE_TIME_MINUTES: number;
@@ -33,7 +33,7 @@ export abstract class Game<Config extends object = object> {
    * Creates a new game.
    * @param protected Whether the game should be protected by a join secret.
    * @param config Custom config options provided at creation time.
-   * @param maxPlayerCount Maxiumum amount of players allowed in one game at a time. The default is 6. The minimum is 1.
+   * @param maxPlayerCount Maximum amount of players allowed in one game at a time. The default is 6. The minimum is 1.
    * @param maxInactiveTimeMinutes Maximum inactive time of a player in minutes. The default is 10 minutes.
    */
   constructor(
@@ -124,8 +124,8 @@ export abstract class Game<Config extends object = object> {
       if (omitPlayersById.includes(playerId)) continue;
       player.sendEvent(event);
     }
-    for (const specatator of Object.values(this.spectators)) {
-      specatator.send(event);
+    for (const spectator of Object.values(this.spectators)) {
+      spectator.send(event);
     }
   }
 
@@ -137,7 +137,7 @@ export abstract class Game<Config extends object = object> {
 
   /**
    * Checks if the maximum player count has been reached.
-   * @returns `true` if the maximum playercount has been reached.
+   * @returns `true` if the maximum player count has been reached.
    */
   public full(): boolean {
     return !(this.getPlayerCount() < this.MAX_PLAYER_COUNT);
